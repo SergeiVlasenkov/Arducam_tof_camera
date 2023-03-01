@@ -4,8 +4,10 @@ import numpy as np
 import ArducamDepthCamera as ac
 
 print(dir(ac))
-
+#### DEFINE GLOBAL VARIABLES
 MAX_DISTANCE = 4
+#NO_FORWARD = False
+
 
 def process_frame(depth_buf: np.ndarray, amplitude_buf: np.ndarray) -> np.ndarray:
         
@@ -32,7 +34,7 @@ followRect = UserRect()
 
         
 
-def avoid_obstacles(frame1):  
+def avoid_obstacles(frame1,NO_FORWARD_FRAMES):  
     #from camera we receiving grascale image
     #cv2 have only RGB to HSV or BRG to HSV converters
     #so just convert uor grascale to BRG first
@@ -64,6 +66,7 @@ def avoid_obstacles(frame1):
     color = (255,0,255)
     thickness = 1
 
+    no_obstacles = False
 
     try:
         text = ""
@@ -80,28 +83,39 @@ def avoid_obstacles(frame1):
 
         except ZeroDivisionError: # if there is no obstacles
             text = "forward"
+            NO_FORWARD_FRAMES = 0
+            no_obstacles = True
 
 
-        if cy<30:
-            text = "down"
+        #if cy<30:
+            #text = "down"
             #Send signal to motor driver to turn right
-        else:
-            text = "up" 
+        #else:
+            #text = "up" 
             #Send signal to motor driver to turn left
-
-        if cx<40:
-            text += " right"
-            #Send signal to motor driver to turn right
-        else:
-            text += " left" 
-            #Send signal to motor driver to turn left
+        if no_obstacles == False:
+            if cx<40:
+                text += " right"
+                NO_FORWARD_FRAMES += 1
+                #Send signal to motor driver to turn right
+            else:
+                text += " left"
+                NO_FORWARD_FRAMES += 1
+                #Send signal to motor driver to turn left
 
     except IndexError:
         text = "forward"
+        NO_FORWARD_FRAMES = 0
+
+    #assume we works as 30 FPS
+    #if where is no forward way for 10 sec, we stuck (at corner for example)
+    #then we turn left\right for 40-90 degrees or turn around 
+    if NO_FORWARD_FRAMES > 300:
+        text = "turn around"
     cv2.imshow("Contours Window",frame)
     frame = cv2.putText(framebgr, text, coordinates, font, fontScale, color, thickness, cv2.LINE_AA)	
     cv2.imshow("Navigation Window",framebgr)	
-
+    return NO_FORWARD_FRAMES
 
 if __name__ == "__main__":
     cam = ac.ArducamCamera()
@@ -109,7 +123,8 @@ if __name__ == "__main__":
         print("initialization failed")
     if cam.start(ac.TOFOutput.DEPTH) != 0 :
         print("Failed to start camera")
-    cam.setControl(ac.TOFControl.RANG,MAX_DISTANCE)    
+    cam.setControl(ac.TOFControl.RANG,MAX_DISTANCE)
+    NO_FORWARD_FRAMES = 0    
     while True:
         frame = cam.requestFrame(200)
         if frame != None:
@@ -119,7 +134,7 @@ if __name__ == "__main__":
             amplitude_buf*=(255/1024)
             amplitude_buf = np.clip(amplitude_buf, 0, 255)
             amplitude_buf = amplitude_buf.astype(np.uint8)
-            avoid_obstacles(amplitude_buf)
+            NO_FORWARD_FRAMES = avoid_obstacles(amplitude_buf, NO_FORWARD_FRAMES)
 
 
             key = cv2.waitKey(1)

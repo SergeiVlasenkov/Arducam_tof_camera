@@ -2,7 +2,6 @@ import sys
 import cv2
 import numpy as np
 import ArducamDepthCamera as ac
-import uuid
 
 print(dir(ac))
 
@@ -63,7 +62,6 @@ if __name__ == "__main__":
     cam.setControl(ac.TOFControl.RANG,MAX_DISTANCE)
     cv2.namedWindow("preview", cv2.WINDOW_AUTOSIZE)
     cv2.setMouseCallback("preview",on_mouse)
-    filecount =0
     while True:
         frame = cam.requestFrame(200)
         if frame != None:
@@ -76,27 +74,26 @@ if __name__ == "__main__":
             cv2.imshow("preview_amplitude", amplitude_buf.astype(np.uint8))
 
             result_image = process_frame(depth_buf,amplitude_buf)
-            dat = result_image
-            #result_image = cv2.GaussianBlur(result_image, (5,5), 0)
-            result_image = cv2.applyColorMap(result_image, cv2.COLORMAP_JET)
-            cv2.rectangle(result_image,(selectRect.start_x,selectRect.start_y),(selectRect.end_x,selectRect.end_y),(128,128,128), 1)
-            cv2.rectangle(result_image,(followRect.start_x,followRect.start_y),(followRect.end_x,followRect.end_y),(255,255,255), 1)
+            #result_image = cv2.applyColorMap(result_image, cv2.COLORMAP_JET)
+            #
+            bgr = cv2.cvtColor(result_image, cv2.COLOR_GRAY2BGR)
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            blur = cv2.GaussianBlur(gray, (5,5), 0)
+            thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+
+            # Find bounding box
+            x,y,w,h = cv2.boundingRect(thresh)
+            cv2.rectangle(result_image, (x, y), (x + w, y + h), (36,255,12), 2)
+            cv2.putText(result_image, "w={},h={}".format(w,h), (x,y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (36,255,12), 2)
+
+            cv2.imshow("thresh", thresh)
+            cv2.imshow("image", result_image)
+            #cv2.rectangle(result_image,(selectRect.start_x,selectRect.start_y),(selectRect.end_x,selectRect.end_y),(128,128,128), 1)
+            #cv2.rectangle(result_image,(followRect.start_x,followRect.start_y),(followRect.end_x,followRect.end_y),(255,255,255), 1)
             print("select Rect distance:",np.mean(depth_buf[selectRect.start_x:selectRect.end_x,selectRect.start_y:selectRect.end_y]))
             cv2.imshow("preview",result_image)
 
             key = cv2.waitKey(1)
-            if key == ord("w"):                                
-                filecount += 1
-                guid = uuid.uuid4() 
-                fileimagename = "file" + f'{filecount}' + f'{guid}' + ".png"
-                filename = "file" + f'{filecount}' + f'{guid}' + ".txt"
-                depthfilename = "depth" + f'{filecount}' + f'{guid}' + ".txt"   
-                cv2.imwrite(fileimagename,result_image)
-                with open(filename, 'w') as f:
-                    f.write(', '.join(str(item) for item in dat)+'\n')
-                with open(depthfilename, 'w') as d:
-                    d.write(', '.join(str(item) for item in depth_buf)+'\n')   
-                print("Files saved")
             if key == ord("q"):
                 exit_ = True
                 cam.stop()

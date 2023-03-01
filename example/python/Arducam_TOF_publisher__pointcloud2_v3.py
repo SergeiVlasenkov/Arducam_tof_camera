@@ -1,8 +1,8 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32MultiArray
 import ArducamDepthCamera as ac
-from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs.msg import PointCloud2, PointField, CameraInfo
 from sensor_msgs_py import point_cloud2 as pc2
 import struct
 import math
@@ -12,6 +12,7 @@ import numpy as np
 import sensor_msgs.msg
 from sensor_msgs.msg import Image
 import cv2
+#import pcl
 #msg_frame = CvBridge().cv2_to_imgmsg(frame, "bgr8")
 
 
@@ -19,12 +20,17 @@ class MinimalPublisher(Node):
 
     def __init__(self):
         super().__init__('minimal_publisher')
+        
+        self.camerainfopublisher = self.create_publisher(CameraInfo, 'camera_info', 10)
         if image_publisher_enabled:
             self.imagepublisher = self.create_publisher(Image, 'Image', 10)
         if depthimage_publisher_enabled:
             self.depthimagepublisher = self.create_publisher(Image, 'Depth_image', 10)
         if pointcloud_publisher_enabled:
             self.pointcloudpublisher = self.create_publisher(PointCloud2, 'cloud_in', 10)
+        if depthframe_publisher_enabled:
+            self.depthframepublisher = self.create_publisher(Float32MultiArray, 'depth_frame', 10)
+        
         self.get_logger().info('Publishers created')
         timer_period = 0.001  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -35,6 +41,8 @@ class MinimalPublisher(Node):
         depth_buf, amplitude_buf = get_depth_amplitude_buf()
         depth_ptr = depth_buf
         amplitude_ptr =  amplitude_buf
+        
+        self.publiscamerainfo()
         if pointcloud_publisher_enabled:
             self.publishpointcloud(depth_ptr,amplitude_ptr)
         if image_publisher_enabled:
@@ -47,15 +55,32 @@ class MinimalPublisher(Node):
         pointcloudheader = Header()
         pointcloudheader.frame_id = "map"
         point_cloud = get_points_depth_amplitude_buf(depth_ptr,amplitude_ptr)
+
         pointcloudmsg = create_cloud_xyz(pointcloudheader, point_cloud)
         pointcloudmsg.header.stamp = self.get_clock().now().to_msg() 
         self.pointcloudpublisher.publish(pointcloudmsg)
         #self.get_logger().info('Publishing: "%s"' % pointcloudmsg)
         
+    def publishdepthframe(self,depth_ptr,amplitude_ptr):
+        depth_msg =Float32MultiArray        
+        depth_msg.layout.dim.resize(2)
+        depth_msg.layout.dim[0].label = "height"
+        depth_msg.layout.dim[0].size = 180
+        depth_msg.layout.dim[0].stride = 43200
+        depth_msg.layout.dim[1].label = "width"
+        depth_msg.layout.dim[1].size = 240
+        depth_msg.layout.dim[1].stride = 240
+        
+        depth_msg.data = get_points_depth_amplitude_buf(depth_ptr,amplitude_ptr)
+        
+        self.depthframepublisher.publish(depth_msg)
+
     def publisdepthhimage(self, depth_buf, amplitude_buf):
         image = process_depth_frame(depth_buf,amplitude_buf)
         Br = CvBridge()
-        imgmsg  = Br.cv2_to_imgmsg(image)
+        imgmsg  = Br.cv2_to_imgmsg(image)        
+        #32FC1
+        #imgmsg  = Br.cv2_to_imgmsg(image,"32FC1")
         imgmsg.header.stamp = self.get_clock().now().to_msg()  
         imgmsg.header.frame_id = "map"  
         self.depthimagepublisher.publish(imgmsg)
@@ -70,6 +95,11 @@ class MinimalPublisher(Node):
         self.imagepublisher.publish(imgmsg)
         #self.get_logger().info('Publishing: "%s"' % imgmsg)
 
+    def publiscamerainfo(self):
+        cam_info_msg.header.stamp = self.get_clock().now().to_msg() 
+        self.camerainfopublisher.publish(cam_info_msg)
+        #self.get_logger().info('Publishing: "%s"' % cam_info_msg)        
+    
 
 class CvBridgeError(TypeError):
     """This is the error raised by :class:`cv_bridge.CvBridge` methods when they fail."""
@@ -153,6 +183,24 @@ class CvBridge(object):
             raise CvBridgeError(e)
 
         return cmprs_img_msg
+    
+    def encoding_to_cvtype2(self, encoding):
+        #define CV_32FC1 CV_MAKETYPE(CV_32F,1)
+        if encoding == "32FC1":            
+            return "CV_32F"
+        #from cv_bridge.boost.cv_bridge_boost import getCvType
+
+        #try:
+            #return getCvType(encoding)
+        #except RuntimeError as e:
+            #raise CvBridgeError(e)
+    
+    def cvtype2_to_dtype_with_channels(self, cvtype):
+        
+        #from cv_bridge.boost.cv_bridge_boost import CV_MAT_CNWrap, CV_MAT_DEPTHWrap
+        #return self.cvdepth_to_numpy_depth[CV_MAT_DEPTHWrap(cvtype)], CV_MAT_CNWrap(cvtype)
+        text = cvtype
+        return text
 
     def cv2_to_imgmsg(self, cvim, encoding='passthrough', header = None):
         """
@@ -201,7 +249,6 @@ def main(args=None):
     rclpy.init(args=args)
 
     minimal_publisher = MinimalPublisher()    
-    
 
     rclpy.spin(minimal_publisher)
 
@@ -245,7 +292,32 @@ def get_image_from_amplitude_buf(amplitude_buf):
     amplitude_buf = np.clip(amplitude_buf, 0, 255)
     resultimg = amplitude_buf.astype(np.uint8) 
     return resultimg
-            
+
+def build_camera_info():  # pylint: disable=no-self-use
+        """
+        Private function to compute camera info
+
+        camera info doesn't change over time
+        """
+        camera_info = CameraInfo()
+        # store info without header
+        camera_info.header = Header()
+        camera_info.header.frame_id = "map"
+        
+        camera_info.width = 240
+        camera_info.height = 180
+        camera_info.distortion_model = 'plumb_bob'
+        cx = camera_info.width / 2.0
+        cy = camera_info.height / 2.0
+        #fx = camera_info.width / (
+            #2.0 * math.tan(float(attributes['fov']) * math.pi / 360.0))
+        #fy = fx
+        camera_info.k = [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]
+        camera_info.d = [0.0, 0.0, 0.0, 0.0, 0.0]
+        camera_info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        camera_info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]       
+        #self.get_logger().info('Publishing: "%s"' % pointcloudmsg)
+        return camera_info             
 
 #global init variables :
 MAX_DISTANCE = 4
@@ -259,9 +331,13 @@ if cam.init(ac.TOFConnect.CSI,0) != 0 :
 if cam.start(ac.TOFOutput.DEPTH) != 0 :
     print("Failed to start camera")
 cam.setControl(ac.TOFControl.RANG, MAX_DISTANCE)
-pointcloud_publisher_enabled = True
-image_publisher_enabled = False
-depthimage_publisher_enabled = False
+cam_info_msg = build_camera_info()
+pointcloud_publisher_enabled = False
+image_publisher_enabled = True
+depthimage_publisher_enabled = True
+depthframe_publisher_enabled = True
+
+
 
 # function creates pointCloud2 from XYZ point array 
 def create_cloud_xyz( header, points):
@@ -284,7 +360,14 @@ def process_depth_frame(depth_buf: np.ndarray, amplitude_buf: np.ndarray) -> np.
     depth_buf = np.clip(depth_buf, 0, 255)
     result_frame = depth_buf.astype(np.uint8)  & amplitude_buf.astype(np.uint8)
     result_frame = cv2.applyColorMap(result_frame, cv2.COLORMAP_JET)
-    return result_frame 
+    #result_frame = cv2.applyColorMap(result_frame, cv2.COLOR)
+    return result_frame
+
+def process_depth_frame4ls(depth_buf: np.ndarray, amplitude_buf: np.ndarray) -> np.ndarray:
+        
+    result_frame = depth_buf 
+    
+    return result_frame  
 
 if __name__ == '__main__':
     main()
