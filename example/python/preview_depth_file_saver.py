@@ -7,7 +7,7 @@ import os
 
 print(dir(ac))
 
-MAX_DISTANCE = 4
+MAX_DISTANCE = 1
 
 def process_frame(depth_buf: np.ndarray, amplitude_buf: np.ndarray) -> np.ndarray:
         
@@ -54,7 +54,7 @@ if __name__ == "__main__":
             result_image = process_frame(depth_buf,amplitude_buf)
             dat = result_image
             #result_image = cv2.GaussianBlur(result_image, (5,5), 0)
-            result_image = cv2.applyColorMap(result_image, cv2.COLORMAP_JET)
+            #result_image = cv2.applyColorMap(result_image, cv2.COLORMAP_JET)
             #cv2.rectangle(result_image,(selectRect.start_x,selectRect.start_y),(selectRect.end_x,selectRect.end_y),(128,128,128), 1)
             #cv2.rectangle(result_image,(followRect.start_x,followRect.start_y),(followRect.end_x,followRect.end_y),(255,255,255), 1)
             #print("select Rect distance:",np.mean(depth_buf[selectRect.start_x:selectRect.end_x,selectRect.start_y:selectRect.end_y]))
