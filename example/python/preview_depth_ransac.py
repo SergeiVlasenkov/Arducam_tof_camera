@@ -5,6 +5,7 @@ import ArducamDepthCamera as ac
 import os
 import time
 import math
+import open3d as o3d
 from datetime import datetime
 
 MAX_DISTANCE = 4
@@ -22,6 +23,31 @@ image_height = float(180)  # a
 
 triangle_top_angle = math.radians(90  / 2.0)
 print(dir(ac))
+
+def rasnsac(points):
+    # Считываем облако точек из файла .pcd
+    #pcd = o3d.io.read_point_cloud("point_cloud.pcd")
+    pcd = o3d.t.geometry.PointCloud()
+
+    # Извлекаем координаты точек в виде массива numpy
+    #points = np.asarray(pcd.points)
+    #pointsdepth_array
+
+    # Определяем параметры алгоритма RANSAC
+    distance_threshold = 0.01
+    ransac_n = 3
+    num_iterations = 10000
+
+    # Запускаем алгоритм RANSAC для поиска плоскости
+    plane_model, inliers = pcd.segment_plane(distance_threshold, ransac_n, num_iterations)
+
+    # Извлекаем координаты точек на плоскости
+    inlier_points = points[inliers]
+
+    # Визуализируем результаты
+    inlier_pcd = o3d.geometry.PointCloud()
+    inlier_pcd.points = o3d.utility.Vector3dVector(inlier_points)
+    o3d.visualization.draw_geometries([inlier_pcd])
 
 def max_pool(img, factor: int):
     """ Perform max pooling with a (factor x factor) kernel"""
@@ -211,6 +237,7 @@ if __name__ == "__main__":
             depth_buff_multiply = depth_buf
             #img_to_check = process_depth_image255(depth_buff_multiply)
             depth_image255 = process_depth_image255(depth_buff_multiply)
+            rasnsac(depth_image255)
             #checked_img = check_flat(img_to_check, 3)
             #checked_img = cv2.medianBlur(checked_img, 3)  
             #cv2.imshow("checked_img",checked_img)            
